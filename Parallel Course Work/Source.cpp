@@ -1,6 +1,10 @@
 #include <iostream>
+#include <omp.h>
+#include <thread>
+#include <chrono>
 
 using namespace std;
+using namespace std::chrono;
 
 // Defines the data size to work on
 const unsigned int SIZE = 1000;
@@ -11,9 +15,13 @@ double matgen(double **a, int lda, int n, double *b)
 {
 	double norma = 0.0;
 	int init = 1325;
+	int THREADS = thread::hardware_concurrency();
+
+
 
 	for (int i = 0; i < n; ++i)
 	{
+
 		for (int j = 0; j < n; ++j)
 		{
 			init = 3125 * init % 65536;
@@ -23,6 +31,7 @@ double matgen(double **a, int lda, int n, double *b)
 	}
 	for (int i = 0; i < n; ++i)
 		b[i] = 0.0;
+
 	for (int j = 0; j < n; ++j)
 	{
 		for (int i = 0; i < n; ++i)
@@ -45,6 +54,7 @@ int idamax(int n, double *dx, int dx_off, int incx)
 	{
 		dmax = abs(dx[0 + dx_off]);
 		ix = 1 + incx;
+
 		for (int i = 1; i < n; ++i)
 		{
 			dtemp = abs(dx[ix + dx_off]);
@@ -60,6 +70,7 @@ int idamax(int n, double *dx, int dx_off, int incx)
 	{
 		itemp = 0;
 		dmax = abs(dx[0 + dx_off]);
+
 		for (int i = 0; i < n; ++i)
 		{
 			dtemp = abs(dx[i + dx_off]);
@@ -84,11 +95,13 @@ void dscal(int n, double da, double *dx, int dx_off, int incx)
 		if (incx != 1)
 		{
 			nincx = n * incx;
+
 			for (int i = 0; i < nincx; i += incx)
 				dx[i + dx_off] *= da;
 		}
 		else
 		{
+
 			for (int i = 0; i < n; ++i)
 				dx[i + dx_off] *= da;
 		}
@@ -134,8 +147,11 @@ int dgefa(double **a, int lda, int n, int *ipvt)
 	int nm1 = n - 1;
 	int info = 0;
 
+
+
 	if (nm1 >= 0)
 	{
+#pragma omp  parallel for
 		for (int k = 0; k < nm1; ++k)
 		{
 			// Set pointer for col_k to relevant column in a
@@ -162,6 +178,7 @@ int dgefa(double **a, int lda, int n, int *ipvt)
 				dscal(n - kp1, t, col_k, kp1, 1);
 
 				// Row elimination with column indexing
+#pragma omp  parallel for
 				for (int j = kp1; j < n; ++j)
 				{
 					// Set pointer for col_j to relevant column in a
@@ -202,6 +219,7 @@ double ddot(int n, double *dx, int dx_off, int incx, double *dy, int dy_off, int
 			iy = 0;
 			if (incx < 0) ix = (-n + 1) * incx;
 			if (incy < 0) iy = (-n + 1) * incy;
+
 			for (int i = 0; i < n; ++i)
 			{
 				temp += dx[ix + dx_off] * dy[iy + dy_off];
@@ -210,6 +228,7 @@ double ddot(int n, double *dx, int dx_off, int incx, double *dy, int dy_off, int
 			}
 		}
 		else
+
 			for (int i = 0; i < n; ++i)
 				temp += dx[i + dx_off] * dy[i + dy_off];
 	}
@@ -230,6 +249,7 @@ void dgesl(double **a, int lda, int n, int *ipvt, double *b, int job)
 		// Solve a * x = b.  First solve l * y = b
 		if (nm1 >= 1)
 		{
+ 
 			for (k = 0; k < nm1; ++k)
 			{
 				l = ipvt[k];
@@ -244,6 +264,7 @@ void dgesl(double **a, int lda, int n, int *ipvt, double *b, int job)
 			}
 		}
 
+
 		// Now solve u * x = y
 		for (int kb = 0; kb < n; ++kb)
 		{
@@ -255,6 +276,7 @@ void dgesl(double **a, int lda, int n, int *ipvt, double *b, int job)
 	}
 	else
 	{
+
 		// Solve trans(a) * x = b.  First solve trans(u) * y = b
 		for (k = 0; k < n; ++k)
 		{
@@ -284,6 +306,7 @@ void dgesl(double **a, int lda, int n, int *ipvt, double *b, int job)
 // Multiply matrix m times vector x and add the result to vector y
 void dmxpy(int n1, double *y, int n2, int ldm, double *x, double **m)
 {
+
 	for (int j = 0; j < n2; ++j)
 		for (int i = 0; i < n1; ++i)
 			y[i] += x[j] * m[j][i];
@@ -309,21 +332,33 @@ double epslon(double x)
 // Initialises the system
 void initialise(double **a, double *b, double &ops, double &norma, double lda)
 {
+	
+ 
 	long long nl = static_cast<long long>(SIZE);
 	ops = (2.0 * static_cast<double>((nl * nl * nl))) / 3.0 + 2.0 * static_cast<double>((nl * nl));
+
+
 	norma = matgen(a, lda, SIZE, b);
+	
 }
 
 // Runs the benchmark
 void run(double **a, double *b, int &info, double lda, int n, int *ipvt)
 {
+
 	info = dgefa(a, lda, n, ipvt);
-	dgesl(a, lda, n, ipvt, b, 0);
+
+
+	dgesl( a, lda, n, ipvt, b, 0);
+
+	
 }
 
 // Validates the result
 void validate(double **a, double *b, double *x, double &norma, double &normx, double &resid, double lda, int n)
 {
+
+
 	double eps, residn;
 	double ref[] = { 6.0, 12.0, 20.0 };
 
@@ -338,6 +373,7 @@ void validate(double **a, double *b, double *x, double &norma, double &normx, do
 	dmxpy(n, b, n, lda, x, a);
 	resid = 0.0;
 	normx = 0.0;
+
 	for (int i = 0; i < n; ++i)
 	{
 		resid = (resid > abs(b[i])) ? resid : abs(b[i]);
@@ -377,9 +413,22 @@ int main(int argc, char **argv)
 	int info;
 
 	// Main application
-	initialise(a, b, ops, norma, lda);
-	run(a, b, info, lda, SIZE, ipvt);
+	auto start = system_clock::now();
+	int THREADS = thread::hardware_concurrency();
+
+	initialise( a, b, ops, norma, lda);
+
+	run( a, b, info, lda, SIZE, ipvt);
+
+
 	validate(a, b, x, norma, normx, resid, lda, SIZE);
+
+	auto end = system_clock::now();
+	auto total = duration_cast<milliseconds>(end - start).count();
+	cout << "Total time:  " << total << "ms" << endl;
+
+
+
 
 	// Free the memory
 	for (int i = 0; i < SIZE; ++i)
