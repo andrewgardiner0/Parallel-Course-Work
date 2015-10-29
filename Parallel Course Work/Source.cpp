@@ -2,6 +2,7 @@
 #include <omp.h>
 #include <thread>
 #include <chrono>
+#include <atomic>
 
 using namespace std;
 using namespace std::chrono;
@@ -15,7 +16,7 @@ double matgen(double **a, int lda, int n, double *b)
 {
 	double norma = 0.0;
 	int init = 1325;
-	int THREADS = thread::hardware_concurrency();
+
 
 
 
@@ -25,16 +26,19 @@ double matgen(double **a, int lda, int n, double *b)
 		for (int j = 0; j < n; ++j)
 		{
 			init = 3125 * init % 65536;
-			a[j][i] = (static_cast<double>(init)-32768.0) / 16384.0;
+
+			a[j][i] = (static_cast<double>(init) - 32768.0) / 16384.0;
 			norma = (a[j][i] > norma) ? a[j][i] : norma;
 		}
 	}
 	for (int i = 0; i < n; ++i)
+
 		b[i] = 0.0;
 
 	for (int j = 0; j < n; ++j)
 	{
 		for (int i = 0; i < n; ++i)
+
 			b[i] += a[j][i];
 	}
 
@@ -44,8 +48,8 @@ double matgen(double **a, int lda, int n, double *b)
 int idamax(int n, double *dx, int dx_off, int incx)
 {
 	double dmax, dtemp;
-	int ix, itemp = 0;
-
+	atomic_int ix;
+	int itemp = 0;
 	if (n < 1)
 		itemp = -1;
 	else if (n == 1)
@@ -63,19 +67,22 @@ int idamax(int n, double *dx, int dx_off, int incx)
 				itemp = i;
 				dmax = dtemp;
 			}
+
 			ix += incx;
 		}
 	}
 	else
 	{
 		itemp = 0;
-		dmax = abs(dx[0 + dx_off]);
 
+		dmax = abs(dx[0 + dx_off]);
+//#pragma omp parallel for
 		for (int i = 0; i < n; ++i)
 		{
 			dtemp = abs(dx[i + dx_off]);
 			if (dtemp > dmax)
 			{
+
 				itemp = i;
 				dmax = dtemp;
 			}
@@ -88,21 +95,23 @@ int idamax(int n, double *dx, int dx_off, int incx)
 // Scales a vector by a constant
 void dscal(int n, double da, double *dx, int dx_off, int incx)
 {
-	int nincx;
+	atomic_int nincx;
 
 	if (n > 0)
 	{
 		if (incx != 1)
 		{
 			nincx = n * incx;
-
+//#pragma omp parallel for
 			for (int i = 0; i < nincx; i += incx)
+
 				dx[i + dx_off] *= da;
 		}
 		else
 		{
-
+//#pragma omp parallel for
 			for (int i = 0; i < n; ++i)
+
 				dx[i + dx_off] *= da;
 		}
 	}
@@ -111,7 +120,8 @@ void dscal(int n, double da, double *dx, int dx_off, int incx)
 // Constant times a vector plus a vector
 void daxpy(int n, double da, double *dx, int dx_off, int incx, double *dy, int dy_off, int incy)
 {
-	int ix, iy;
+	atomic_int ix, iy;
+
 
 	if ((n > 0) && (da != 0))
 	{
@@ -120,9 +130,10 @@ void daxpy(int n, double da, double *dx, int dx_off, int incx, double *dy, int d
 			ix = 0;
 			iy = 0;
 			if (incx < 0) ix = (-n + 1) * incx;
-			if (incy < 0) iy = (-n + 1) * incy;
+//#pragma omp parallel for
 			for (int i = 0; i < n; ++i)
 			{
+
 				dy[iy + dy_off] += da * dx[ix + dx_off];
 				ix += incx;
 				iy += incy;
@@ -130,7 +141,9 @@ void daxpy(int n, double da, double *dx, int dx_off, int incx, double *dy, int d
 		}
 		else
 		{
+//#pragma omp parallel for
 			for (int i = 0; i < n; ++i)
+
 				dy[i + dy_off] += da * dx[i + dx_off];
 		}
 	}
@@ -151,7 +164,7 @@ int dgefa(double **a, int lda, int n, int *ipvt)
 
 	if (nm1 >= 0)
 	{
-#pragma omp  parallel for
+
 		for (int k = 0; k < nm1; ++k)
 		{
 			// Set pointer for col_k to relevant column in a
@@ -159,6 +172,7 @@ int dgefa(double **a, int lda, int n, int *ipvt)
 			kp1 = k + 1;
 
 			// Find pivot index
+
 			l = idamax(n - k, col_k, k, 1) + k;
 			ipvt[k] = l;
 
@@ -174,11 +188,13 @@ int dgefa(double **a, int lda, int n, int *ipvt)
 				}
 
 				// Compute multipliers
-				t = -1.0 / col_k[k];
-				dscal(n - kp1, t, col_k, kp1, 1);
 
+				t = -1.0 / col_k[k];
+
+				thread t1(dscal,n - kp1, t, col_k, kp1, 1);
+				t1.join();
 				// Row elimination with column indexing
-#pragma omp  parallel for
+
 				for (int j = kp1; j < n; ++j)
 				{
 					// Set pointer for col_j to relevant column in a
@@ -190,9 +206,13 @@ int dgefa(double **a, int lda, int n, int *ipvt)
 						col_j[l] = col_j[k];
 						col_j[k] = t;
 					}
+
 					daxpy(n - kp1, t, col_k, kp1, 1, col_j, kp1, 1);
+				
+
 				}
 			}
+
 			else
 				info = k;
 		}
@@ -217,7 +237,9 @@ double ddot(int n, double *dx, int dx_off, int incx, double *dy, int dy_off, int
 		{
 			ix = 0;
 			iy = 0;
+			//#pragma omp parallel
 			if (incx < 0) ix = (-n + 1) * incx;
+			//#pragma omp parallel
 			if (incy < 0) iy = (-n + 1) * incy;
 
 			for (int i = 0; i < n; ++i)
@@ -229,8 +251,11 @@ double ddot(int n, double *dx, int dx_off, int incx, double *dy, int dy_off, int
 		}
 		else
 
-			for (int i = 0; i < n; ++i)
-				temp += dx[i + dx_off] * dy[i + dy_off];
+			for (int i = 0; i < n; ++i) {
+		temp += dx[i + dx_off] * dy[i + dy_off];
+		
+	}
+		
 	}
 
 	return temp;
@@ -240,60 +265,82 @@ double ddot(int n, double *dx, int dx_off, int incx, double *dy, int dy_off, int
 void dgesl(double **a, int lda, int n, int *ipvt, double *b, int job)
 {
 	double t;
-	int k, l, nm1, kp1;
+	atomic_int k, l, nm1, kp1;
 
 	nm1 = n - 1;
 
-	if (job == 0)
-	{
+	if (job == 0) {
+
+
 		// Solve a * x = b.  First solve l * y = b
 		if (nm1 >= 1)
 		{
- 
+//#pragma omp parallel for
 			for (k = 0; k < nm1; ++k)
 			{
+
 				l = ipvt[k];
 				t = b[l];
 				if (l != k)
 				{
+
 					b[l] = b[k];
 					b[k] = t;
 				}
 				kp1 = k + 1;
+
 				daxpy(n - kp1, t, &a[k][0], kp1, 1, b, kp1, 1);
+				
 			}
 		}
 
 
+
 		// Now solve u * x = y
+//#pragma omp parallel for
 		for (int kb = 0; kb < n; ++kb)
 		{
 			k = n - (kb + 1);
 			b[k] /= a[k][k];
 			t = -b[k];
-			daxpy(k, t, &a[k][0], 0, 1, b, 0, 1);
-		}
-	}
-	else
-	{
 
-		// Solve trans(a) * x = b.  First solve trans(u) * y = b
-		for (k = 0; k < n; ++k)
-		{
-			t = ddot(k, &a[k][0], 0, 1, b, 0, 1);
-			b[k] = (b[k] - t) / a[k][k];
+			daxpy(k, t, &a[k][0], 0, 1, b, 0, 1);
+
 		}
+
+	}
+
+
+
+
+	else {
+
+		{
+
+			for (k = 0; k < n; ++k)
+			{
+				t = ddot(k, &a[k][0], 0, 1, b, 0, 1);
+				b[k] = (b[k] - t) / a[k][k];
+
+			}
+
+		}
+
 		// Solve trans(l) * x = y
 		if (nm1 >= 1)
 		{
+
 			for (int kb = 1; kb < nm1; ++kb)
 			{
+
 				k = n - (kb + 1);
 				kp1 = k + 1;
+
 				b[k] += ddot(n - kp1, &a[k][0], kp1, 1, b, kp1, 1);
 				l = ipvt[k];
 				if (l != k)
 				{
+
 					t = b[l];
 					b[l] = b[k];
 					b[k] = t;
@@ -303,10 +350,18 @@ void dgesl(double **a, int lda, int n, int *ipvt, double *b, int job)
 	}
 }
 
+
+
+
+
+
+
+
+
+
 // Multiply matrix m times vector x and add the result to vector y
 void dmxpy(int n1, double *y, int n2, int ldm, double *x, double **m)
 {
-
 	for (int j = 0; j < n2; ++j)
 		for (int i = 0; i < n1; ++i)
 			y[i] += x[j] * m[j][i];
@@ -321,10 +376,13 @@ double epslon(double x)
 
 	while (eps == 0)
 	{
+
 		b = a - 1.0;
 		c = b + b + b;
+
 		eps = abs(c - 1.0);
 	}
+
 
 	return eps * abs(x);
 }
@@ -332,26 +390,30 @@ double epslon(double x)
 // Initialises the system
 void initialise(double **a, double *b, double &ops, double &norma, double lda)
 {
-	
- 
+
+
 	long long nl = static_cast<long long>(SIZE);
+
 	ops = (2.0 * static_cast<double>((nl * nl * nl))) / 3.0 + 2.0 * static_cast<double>((nl * nl));
 
 
 	norma = matgen(a, lda, SIZE, b);
-	
+
 }
 
 // Runs the benchmark
 void run(double **a, double *b, int &info, double lda, int n, int *ipvt)
 {
 
+
 	info = dgefa(a, lda, n, ipvt);
 
 
-	dgesl( a, lda, n, ipvt, b, 0);
 
-	
+
+	dgesl(a, lda, n, ipvt, b, 0);
+
+
 }
 
 // Validates the result
@@ -376,7 +438,9 @@ void validate(double **a, double *b, double *x, double &norma, double &normx, do
 
 	for (int i = 0; i < n; ++i)
 	{
+
 		resid = (resid > abs(b[i])) ? resid : abs(b[i]);
+
 		normx = (normx > abs(x[i])) ? normx : abs(x[i]);
 	}
 
@@ -416,12 +480,15 @@ int main(int argc, char **argv)
 	auto start = system_clock::now();
 	int THREADS = thread::hardware_concurrency();
 
-	initialise( a, b, ops, norma, lda);
+	initialise(a, b, ops, norma, lda);
 
-	run( a, b, info, lda, SIZE, ipvt);
+
+	run(a, b, info, lda, SIZE, ipvt);
+
 
 
 	validate(a, b, x, norma, normx, resid, lda, SIZE);
+
 
 	auto end = system_clock::now();
 	auto total = duration_cast<milliseconds>(end - start).count();
