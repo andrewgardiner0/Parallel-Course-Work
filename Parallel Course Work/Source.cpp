@@ -175,6 +175,7 @@ int dgefa(double **a, int lda, int n, int *ipvt)
 	//#pragma omp parallel num_threads(4) default(none) shared(a,lda,n,ipvt,nm1) private(t,kp1,l,col_k,col_j) reduction(+:info)
 	if (nm1 >= 0)
 	{
+
 		for (int k = 0; k < nm1; ++k)
 		{
 			// Set pointer for col_k to relevant column in a
@@ -295,7 +296,7 @@ void dgesl(double **a, int lda, int n, int *ipvt, double *b, int job)
 		// Solve a * x = b.  First solve l * y = b
 		if (nm1 >= 1)
 		{
-			
+
 			for (k = 0; k < nm1; ++k)
 			{
 
@@ -341,7 +342,7 @@ void dgesl(double **a, int lda, int n, int *ipvt, double *b, int job)
 #pragma omp parallel for num_threads(4)
 			for (k = 0; k < n; ++k)
 			{
-#pragma omp critical
+//#pragma omp critical
 				t = ddot(k, &a[k][0], 0, 1, b, 0, 1);
 				b[k] = (b[k] - t) / a[k][k];
 
@@ -355,14 +356,14 @@ void dgesl(double **a, int lda, int n, int *ipvt, double *b, int job)
 #pragma omp parallel for num_threads(4)
 			for (int kb = 1; kb < nm1; ++kb)
 			{
-#pragma omp critical
+//#pragma omp critical
 				k = n - (kb + 1);
 				kp1 = k + 1;
 				b[k] += ddot(n - kp1, &a[k][0], kp1, 1, b, kp1, 1);
 				l = ipvt[k];
 				if (l != k)
 				{
-#pragma omp critical
+//#pragma omp critical
 					t = b[l];
 					b[l] = b[k];
 					b[k] = t;
